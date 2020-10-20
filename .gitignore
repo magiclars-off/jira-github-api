@@ -1,0 +1,30 @@
+# files that can contain passwords
+.env
+*.toml
+
+# log files
+log.json
+
+# editor files
+/.idea
+/.vscode
+
+# logging / testing
+/log
+*.out
+coverage/
+test-reports/
+
+# executables
+*.sh
+*.exe
+*.bat
+debug
+debug.test
+__debug_bin
+**/bin/*
+
+# generated code
+*.pem
+*.crt
+*.key

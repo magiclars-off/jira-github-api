@@ -1,0 +1,30 @@
+GIT_TAGS = $(shell git describe --tags 2> /dev/null)
+
+build:
+	$(call compile,jira-api)
+
+fmt:
+	@go fmt ./...; \
+	echo "Done."
+
+test:
+	@go test -v -race ./... ; \
+	echo "Done."
+
+lint:
+	@golangci-lint run ./...; \
+	go mod tidy; \
+	echo "Done."
+
+clean:
+	@echo "Cleaning generated files...."
+	@go clean -i ./...
+	@rm -rf bin/
+	echo "Done."
+
+define compile
+	@echo "building $(1) ...."
+		@d=$$(date +%s); \
+		go build -tags 'release $(GIT_TAGS)' -o bin/$(1) ./cmd/ \
+		&& echo "Building took $$(($$(date +%s)-d)) seconds"
+endef
