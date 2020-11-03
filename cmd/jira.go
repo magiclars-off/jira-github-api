@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"regexp"
-	"strings"
 
 	"github.com/andygrunwald/go-jira"
 	"github.com/google/go-github/v32/github"
@@ -47,9 +46,7 @@ func getJiraIdentifiers(commits []*github.RepositoryCommit) []string {
 
 	tickets := make([]string, 0, len(commits))
 	for _, commit := range commits {
-		msg := commit.GetCommit().GetMessage()
-		if strings.Contains(commit.GetCommit().GetMessage(), settings.Jira.TicketIdentifier) {
-			ticket := r.FindString(msg)
+		if ticket := r.FindString(commit.GetCommit().GetMessage()); ticket != "" {
 			tickets = append(tickets, ticket)
 		}
 	}
