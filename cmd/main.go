@@ -1,14 +1,13 @@
 package main
 
 import (
-	"context"
 	"flag"
+	"fmt"
 	"jira-api/internal/config"
-	"strings"
+	"os"
 
 	"github.com/andygrunwald/go-jira"
 	"github.com/google/go-github/v32/github"
-	"golang.org/x/oauth2"
 )
 
 // Globals
@@ -24,37 +23,34 @@ var (
 func main() {
 	defer recoverFunc()
 
-	configFile := flag.String(`config`, `config.toml`, `Location of the config file`)
-	issues := flag.String(`issues`, ``, `Get issue information`)
+	configFile := flag.String(`c`, `config.toml`, `Location of the config file`)
+	base := flag.String(`b`, ``, `Github Base (e.g. tag/v2)`)
+	head := flag.String(`h`, `master`, `Github Head`)
+	repoName := flag.String(`r`, ``, `Repository name`)
+
+	flag.Usage = func() {
+		fmt.Fprintln(os.Stderr, "Usage of Jira-api tool:")
+		flag.PrintDefaults()
+
+		fmt.Println("\nMake sure to also set env variables or config file")
+	}
 	flag.Parse()
+
+	if *repoName == "" {
+		panic(`specify a repository with (-r)`)
+	}
+	if *base == "" || *head == "" {
+		panic(`specify a base (-b) and head (-h) values for comparrison`)
+	}
 
 	config.Read(*configFile, &settings)
 
 	initJiraClient()
 	initGitClient()
 
-	if issues != nil {
-		_ = getIssue(strings.Split(*issues, ","))
-	}
-}
+	commits := compareBranches(*repoName, *base, *head)
+	ticketIdentifiers := getJiraIdentifiers(commits)
+	_, releaseNotes := getIssue(ticketIdentifiers, *repoName, *head)
 
-func initJiraClient() {
-	tp := jira.BasicAuthTransport{
-		Username: settings.Jira.Username,
-		Password: settings.Jira.Password,
-	}
-
-	client, err := jira.NewClient(tp.Client(), settings.Jira.BaseURL)
-	panicOnError(err)
-	jiraClient = client
-}
-
-func initGitClient() {
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: settings.Git.Token},
-	)
-	ctx := context.Background()
-	tc := oauth2.NewClient(ctx, ts)
-
-	gitClient = github.NewClient(tc)
+	fmt.Print(releaseNotes)
 }

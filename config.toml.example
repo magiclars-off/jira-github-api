@@ -1,0 +1,10 @@
+[Jira]
+BaseURL = "https://nestorsupport.atlassian.net/"
+Username = "nestorsupport@rug.nl"
+Password = "password1"
+TicketIdentifier = "IOS"
+
+[Git]
+Owner = "rijksuniversiteit-groningen"
+Username = "bob"
+Token = "secret-token"
