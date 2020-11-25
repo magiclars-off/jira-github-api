@@ -3,12 +3,13 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/andygrunwald/go-jira"
 	"github.com/google/go-github/v32/github"
 )
 
-func initJiraClient() {
+func (j jiraData) initJiraClient() {
 	tp := jira.BasicAuthTransport{
 		Username: settings.Jira.Username,
 		Password: settings.Jira.Password,
@@ -19,37 +20,61 @@ func initJiraClient() {
 		panic(fmt.Errorf(`initJiraClient: %s`, err.Error()))
 	}
 
-	jiraClient = client
+	j.jiraClient = client
 }
 
-func getIssue(issues []string, repoName, head string) ([]jira.Issue, string) {
-	url := fmt.Sprintf(`%sbrowse`, settings.Jira.BaseURL)
-
-	releaseNotes := fmt.Sprintf(`Releasenotes %s - %s`, repoName, head) + "\n"
-
-	result := make([]jira.Issue, len(issues))
-	for _, i := range issues {
-		issue, _, err := jiraClient.Issue.Get(i, nil)
-		if err != nil {
-			panic(fmt.Errorf(`getIssue: %s`, err.Error()))
-		}
-
-		result = append(result, *issue)
-		releaseNotes = releaseNotes + "\n" + fmt.Sprintf(`<a href="%s/%s">[%s]</a> - %s - %s`, url, issue.Key, issue.Key, issue.Fields.Type.Name, issue.Fields.Summary)
+func (j jiraData) getJiraIssue(id string) *jira.Issue {
+	issue, resp, err := j.jiraClient.Issue.Get(id, nil)
+	if err != nil {
+		panic(fmt.Errorf(`getJiraIssue: %s`, err.Error()))
+	}
+	if resp.StatusCode == 404 {
+		panic(fmt.Errorf(`jiraIssue: %s not found`, id))
 	}
 
-	return result, releaseNotes
+	return issue
 }
 
-func getJiraIdentifiers(commits []*github.RepositoryCommit) []string {
-	r, _ := regexp.Compile(fmt.Sprintf("%s-[0-9]{1,5}", settings.Jira.TicketIdentifier))
+func (j jiraData) addCommentToJiraIssue(id string, message string) {
+	_, resp, err := j.jiraClient.Issue.AddComment(id, &jira.Comment{
+		Body: message,
+	})
+	if err != nil {
+		panic(fmt.Errorf(`addCommentToJiraIssue: %s`, err.Error()))
+	}
+	if resp.StatusCode != 200 {
+		panic(fmt.Errorf(`addCommentToJiraIssue failed with statusCode: %d`, resp.StatusCode))
+	}
+}
 
+func getIdentifiersFromCommits(commits []*github.RepositoryCommit) []string {
 	tickets := make([]string, 0, len(commits))
 	for _, commit := range commits {
-		if ticket := r.FindString(commit.GetCommit().GetMessage()); ticket != "" {
+		if ticket := findJiraIdentifier(commit.GetCommit().GetMessage()); ticket != "" {
 			tickets = append(tickets, ticket)
 		}
 	}
 
 	return tickets
+}
+
+func findJiraIdentifier(message string) string {
+	r, _ := regexp.Compile(fmt.Sprintf("%s-[0-9]{1,5}", settings.Jira.TicketIdentifier))
+	return r.FindString(message)
+}
+
+func determineJiraMessage(message string) string {
+	start := "Needs testing from Nestorsupport?"
+	index := strings.Index(message, start)
+	if index == -1 {
+		panic("seems like the PR didn't use the PR template")
+	}
+
+	if strings.Contains(message, "- [x] No") {
+		return "No testing of support required"
+	}
+
+	shortMessage := strings.Split(message, start)
+	fmt.Print(shortMessage[1])
+	return message
 }

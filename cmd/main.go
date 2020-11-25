@@ -12,48 +12,87 @@ import (
 // Globals
 var (
 	configFile string
-	base       string
-	head       string
-	repoName   string
-
-	jiraClient *jira.Client
-	gitClient  *github.Client
+	mode       string
 	settings   = struct {
 		Jira config.Jira
 		Git  config.Git
 	}{}
+
+	g gitData
+	j jiraData
 )
 
-func init() {
-	flag.StringVar(&configFile, `c`, `config.toml`, `Location of the config file`)
-	flag.StringVar(&base, `b`, ``, `Github Base (e.g. tag/v2)`)
-	flag.StringVar(&head, `h`, `master`, `Github Head`)
-	flag.StringVar(&repoName, `r`, ``, `Repository name`)
-	flag.Parse()
+type jiraData struct {
+	jiraClient *jira.Client
+}
 
-	if repoName == "" {
-		panic(`specify a repository with (-r)`)
-	}
-	if base == "" {
-		panic(`specify a base (-b) value for comparrison`)
-	}
+type gitData struct {
+	prNr      int
+	base      string
+	head      string
+	repoName  string
+	gitClient *github.Client
+}
+
+func init() {
+	flag.StringVar(&mode, `m`, ``, `'support-instructions' or 'releasenotes'`)
+	flag.IntVar(&g.prNr, `pr`, 0, `required for: 'support-instructions', pullRequest ID to copy the instructions from`)
+	flag.StringVar(&configFile, `c`, `config.toml`, `Location of the config file`)
+	flag.StringVar(&g.base, `b`, ``, `Github Base (e.g. tag/v2)`)
+	flag.StringVar(&g.head, `h`, `master`, `Github Head`)
+	flag.StringVar(&g.repoName, `r`, ``, `Repository name`)
 }
 
 func main() {
 	defer recoverFunc()
 
+	flag.Parse()
 	config.Read(configFile, &settings)
 
-	initJiraClient()
-	initGitClient()
+	j.initJiraClient()
+	g.initGitClient()
 
-	printReleaseNotes()
+	switch mode {
+	case config.ModusReleasenotes.String():
+		releaseNotes()
+		break
+	case config.ModusSupportInstructions.String():
+		supportInstructions()
+		break
+	default:
+		panic(fmt.Errorf(`'%s' is not a valid mode`, mode))
+	}
 }
 
-func printReleaseNotes() {
-	commits := compareBranches(repoName, base, head)
-	ticketIdentifiers := getJiraIdentifiers(commits)
-	_, releaseNotes := getIssue(ticketIdentifiers, repoName, head)
+func supportInstructions() {
+	pr := g.getPullRequest()
 
+	jiraID := findJiraIdentifier(*pr.Title)
+	if jiraID == "" {
+		panic("no JiraIdentifier found in the PR title")
+	}
+
+	issue := j.getJiraIssue(jiraID)
+	msg := determineJiraMessage(*pr.Body)
+	j.addCommentToJiraIssue(issue.ID, msg)
+}
+
+// releaseNotes takes the input branches, repository and user. Compares the branches
+// checks the commits for jira identifiers and produces releasenotes
+func releaseNotes() {
+	g.validate()
+
+	commits := g.compareBranches()
+	ticketIdentifiers := getIdentifiersFromCommits(commits)
+
+	issues := make([]jira.Issue, len(ticketIdentifiers))
+	for _, id := range ticketIdentifiers {
+		issue := j.getJiraIssue(id)
+		if issue != nil {
+			issues = append(issues, *issue)
+		}
+	}
+
+	releaseNotes := g.getReleasenotes(issues)
 	fmt.Print(releaseNotes)
 }
